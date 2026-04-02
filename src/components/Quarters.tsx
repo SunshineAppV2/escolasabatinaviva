@@ -1,26 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
 import { Calendar, Plus, Trash2, CheckCircle2, Clock } from 'lucide-react';
+import { writeBatch, doc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useToast } from '../context/ToastContext';
 
-const STATUS_LABEL = {
+type QuarterStatus = 'active' | 'finished' | 'planned';
+
+interface Quarter {
+  id: string;
+  name: string;
+  start: string;
+  end: string;
+  status: QuarterStatus;
+  createdAt: string;
+}
+
+interface NewQuarter {
+  name: string;
+  start: string;
+  end: string;
+}
+
+const STATUS_LABEL: Record<QuarterStatus, string> = {
   active:   'EM CURSO',
   finished: 'ENCERRADO',
   planned:  'PLANEJADO',
 };
 
-const STATUS_COLOR = {
+const STATUS_COLOR: Record<QuarterStatus, string> = {
   active:   '#22c55e',
   finished: 'rgba(255,255,255,0.3)',
   planned:  '#f59e0b',
 };
 
-const STATUS_BG = {
+const STATUS_BG: Record<QuarterStatus, string> = {
   active:   'rgba(34,197,94,0.12)',
   finished: 'rgba(255,255,255,0.05)',
   planned:  'rgba(245,158,11,0.12)',
 };
 
-function StatusIcon({ status }) {
+function StatusIcon({ status }: { status: QuarterStatus }) {
   if (status === 'active')  return <CheckCircle2 size={14} color={STATUS_COLOR.active} />;
   if (status === 'planned') return <Clock size={14} color={STATUS_COLOR.planned} />;
   return <Calendar size={14} color={STATUS_COLOR.finished} />;
@@ -102,7 +122,12 @@ const dangerBtnStyle: React.CSSProperties = {
   alignItems: 'center',
 };
 
-function InputField({ value, onChange, type = 'text', placeholder = '' }) {
+function InputField({ value, onChange, type = 'text', placeholder = '' }: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  type?: string;
+  placeholder?: string;
+}) {
   const [focused, setFocused] = useState(false);
   return (
     <input
@@ -118,17 +143,18 @@ function InputField({ value, onChange, type = 'text', placeholder = '' }) {
 }
 
 function Quarters() {
-  const [quarters, setQuarters] = useState([]);
-  const [newQ, setNewQ] = useState({ name: '', start: '', end: '' });
+  const [quarters, setQuarters] = useState<Quarter[]>([]);
+  const [newQ, setNewQ] = useState<NewQuarter>({ name: '', start: '', end: '' });
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
 
   const {
     data: firestoreQuarters,
     loading: firestoreQuartersLoading,
     error: firestoreQuartersError,
     addItem:    addQuarterItem,
-    updateItem: updateQuarterItem,
     deleteItem: deleteQuarterItem,
-  } = useFirestore('quarters');
+  } = useFirestore<Omit<Quarter, 'id'>>('quarters');
 
   useEffect(() => {
     if (!firestoreQuartersLoading && firestoreQuarters.length > 0) {
@@ -137,46 +163,76 @@ function Quarters() {
   }, [firestoreQuarters, firestoreQuartersLoading]);
 
   const addQuarter = async () => {
-    if (!newQ.name.trim() || !newQ.start || !newQ.end) return;
-    const item = { ...newQ, name: newQ.name.trim(), status: 'planned', createdAt: new Date().toISOString() };
-    if (!firestoreQuartersError) {
+    if (!newQ.name.trim() || !newQ.start || !newQ.end) {
+      toast('Preencha nome, data de início e data de fim.', 'error');
+      return;
+    }
+    if (newQ.end <= newQ.start) {
+      toast('A data de fim deve ser posterior à data de início.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      const item = {
+        ...newQ,
+        name: newQ.name.trim(),
+        status: 'planned' as QuarterStatus,
+        createdAt: new Date().toISOString(),
+      };
       await addQuarterItem(item);
+      setNewQ({ name: '', start: '', end: '' });
+      toast('Trimestre cadastrado com sucesso!', 'success');
+    } catch {
+      toast('Erro ao cadastrar trimestre. Tente novamente.', 'error');
+    } finally {
+      setSaving(false);
     }
-    setNewQ({ name: '', start: '', end: '' });
   };
 
-  const deleteQuarter = async (id) => {
-    if (!firestoreQuartersError && firestoreQuarters.some((q) => q.id === id)) {
+  const deleteQuarter = async (id: string) => {
+    if (!firestoreQuarters.some((q) => q.id === id)) return;
+    try {
       await deleteQuarterItem(id);
+      setQuarters((prev) => prev.filter((q) => q.id !== id));
+      toast('Trimestre removido.', 'info');
+    } catch {
+      toast('Erro ao remover trimestre. Tente novamente.', 'error');
     }
-    setQuarters((prev) => prev.filter((q) => q.id !== id));
   };
 
-  const activate = async (id) => {
-    // Regras de transição de status:
+  const activate = async (id: string) => {
+    if (firestoreQuartersError) {
+      toast('Não foi possível ativar: erro de conexão com o banco.', 'error');
+      return;
+    }
+
+    // Calcula as transições de status:
     // - O trimestre ativado → 'active'
-    // - Trimestres que estavam 'active' → 'finished' (foram encerrados ao ativar outro)
-    // - Trimestres 'planned' ou 'finished' → permanecem inalterados
+    // - Trimestres que estavam 'active' → 'finished'
+    // - 'planned' e 'finished' permanecem inalterados
     const nextQuarters = quarters.map((q) => ({
       ...q,
-      status:
-        q.id === id
-          ? 'active'
-          : q.status === 'active'
-          ? 'finished'
-          : q.status,          // 'planned' e 'finished' não mudam
+      status: (q.id === id ? 'active' : q.status === 'active' ? 'finished' : q.status) as QuarterStatus,
     }));
 
-    setQuarters(nextQuarters);
+    const firestoreIds = new Set(firestoreQuarters.map((q) => q.id));
+    const changed = nextQuarters.filter((q) => {
+      const original = quarters.find((o) => o.id === q.id);
+      return firestoreIds.has(q.id) && original?.status !== q.status;
+    });
 
-    if (!firestoreQuartersError) {
-      // Atualiza somente os docs que existem no Firestore e cujo status mudou
-      const firestoreIds = new Set(firestoreQuarters.map((q) => q.id));
-      const changed = nextQuarters.filter((q) => {
-        const original = quarters.find((o) => o.id === q.id);
-        return firestoreIds.has(q.id) && original?.status !== q.status;
-      });
-      await Promise.all(changed.map((q) => updateQuarterItem(q.id, { status: q.status })));
+    // writeBatch garante atomicidade: ou todas as escritas ocorrem ou nenhuma
+    const batch = writeBatch(db);
+    changed.forEach((q) => {
+      batch.update(doc(db, 'quarters', q.id), { status: q.status });
+    });
+
+    try {
+      await batch.commit();
+      setQuarters(nextQuarters);
+      toast('Trimestre ativado com sucesso!', 'success');
+    } catch {
+      toast('Erro ao ativar trimestre. O estado não foi alterado.', 'error');
     }
   };
 
@@ -252,8 +308,12 @@ function Quarters() {
             </div>
           </div>
 
-          <button style={{ ...primaryBtnStyle, width: '100%', justifyContent: 'center' }} onClick={addQuarter}>
-            <Plus size={18} /> Cadastrar Ciclo
+          <button
+            style={{ ...primaryBtnStyle, width: '100%', justifyContent: 'center', opacity: saving ? 0.6 : 1 }}
+            onClick={addQuarter}
+            disabled={saving}
+          >
+            <Plus size={18} /> {saving ? 'Salvando...' : 'Cadastrar Ciclo'}
           </button>
         </div>
 
