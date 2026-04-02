@@ -7,7 +7,11 @@ function calcStats(
   units: HierarchyItem[],
   weights: ScoreWeights,
 ) {
-  const scores: Record<string, number> = {};
+  const scores:   Record<string, number> = {};
+  const uPresent: Record<string, number> = {};
+  const uLesson:  Record<string, number> = {};
+  const uCount:   Record<string, number> = {};
+
   let totalPresents = 0;
   let totalLessons  = 0;
   let totalMission  = 0;
@@ -21,22 +25,37 @@ function calcStats(
 
   records.forEach((r) => {
     const uId = r.unitId || 'unknown';
-    if (!scores[uId]) scores[uId] = 0;
+    if (!scores[uId])   scores[uId]   = 0;
+    if (!uPresent[uId]) uPresent[uId] = 0;
+    if (!uLesson[uId])  uLesson[uId]  = 0;
+    if (!uCount[uId])   uCount[uId]   = 0;
 
-    if (r.present) { scores[uId] += weights.presence; totalPresents++; }
-    if (r.lesson)  { scores[uId] += weights.lesson;   totalLessons++;  }
-    if (r.pg)      { scores[uId] += weights.pg;        totalPg++;       }
-    if (r.mission) { scores[uId] += weights.mission;   totalMission++;  }
+    uCount[uId]++;
+    totalRecords++;
+
+    if (r.present) { scores[uId] += weights.presence; uPresent[uId]++; totalPresents++; }
+    if (r.lesson)  { scores[uId] += weights.lesson;   uLesson[uId]++;  totalLessons++;  }
+    if (r.pg)      { scores[uId] += weights.pg;       totalPg++;       }
+    if (r.mission) { scores[uId] += weights.mission;  totalMission++;  }
 
     scores[uId] += (r.bibleStudy || 0) * weights.bibleStudy;
     scores[uId] += (r.visits     || 0) * weights.visit;
-    totalVisits  += (r.visits     || 0);
-    totalRecords++;
+    totalVisits += (r.visits     || 0);
   });
 
   const leaderboard = units
     .map((u) => ({ id: u.id, name: u.name, points: scores[u.id] || 0 }))
     .sort((a, b) => b.points - a.points);
+
+  const unitStats: Record<string, { presenceRate: number; lessonRate: number; recordCount: number }> = {};
+  for (const uId of Object.keys(uCount)) {
+    const n = uCount[uId];
+    unitStats[uId] = {
+      presenceRate: n > 0 ? Math.round((uPresent[uId] / n) * 100) : 0,
+      lessonRate:   n > 0 ? Math.round((uLesson[uId]  / n) * 100) : 0,
+      recordCount:  n,
+    };
+  }
 
   return {
     presenceRate:  totalRecords > 0 ? Math.round((totalPresents / totalRecords) * 100) : 0,
@@ -46,18 +65,15 @@ function calcStats(
     pgTotal:       totalPg,
     presentsTotal: totalPresents,
     leaderboard,
+    unitStats,
   };
 }
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 const WEIGHTS: ScoreWeights = {
-  presence: 10,
-  lesson: 5,
-  pg: 3,
-  bibleStudy: 2,
-  mission: 4,
-  visit: 1,
+  presence: 10, lesson: 5, pg: 3,
+  bibleStudy: 2, mission: 4, visit: 1,
 };
 
 const UNITS: HierarchyItem[] = [
@@ -76,6 +92,7 @@ describe('calcStats — lógica de pontuação do useRollCallStats', () => {
     expect(result.visitsTotal).toBe(0);
     expect(result.pgTotal).toBe(0);
     expect(result.presentsTotal).toBe(0);
+    expect(result.unitStats).toEqual({});
   });
 
   it('calcula presenceRate corretamente', () => {
@@ -157,5 +174,38 @@ describe('calcStats — lógica de pontuação do useRollCallStats', () => {
     expect(result.pgTotal).toBe(2);
     const u1 = result.leaderboard.find((u) => u.id === 'u1');
     expect(u1?.points).toBe(6); // 2 * pg(3)
+  });
+
+  it('unitStats calcula lessonRate por unidade independentemente', () => {
+    const docs = [{
+      records: [
+        // u1: 1 lição em 2 registros = 50%
+        { unitId: 'u1', present: false, lesson: true,  pg: false, mission: false, bibleStudy: 0, visits: 0 },
+        { unitId: 'u1', present: false, lesson: false, pg: false, mission: false, bibleStudy: 0, visits: 0 },
+        // u2: 2 lições em 2 registros = 100%
+        { unitId: 'u2', present: false, lesson: true,  pg: false, mission: false, bibleStudy: 0, visits: 0 },
+        { unitId: 'u2', present: false, lesson: true,  pg: false, mission: false, bibleStudy: 0, visits: 0 },
+      ],
+    }];
+    const result = calcStats(docs, UNITS, WEIGHTS);
+    expect(result.unitStats['u1'].lessonRate).toBe(50);
+    expect(result.unitStats['u2'].lessonRate).toBe(100);
+    // lessonRate global = 3/4 = 75%
+    expect(result.lessonRate).toBe(75);
+  });
+
+  it('unitStats.presenceRate é independente entre unidades', () => {
+    const docs = [{
+      records: [
+        { unitId: 'u1', present: true,  lesson: false, pg: false, mission: false, bibleStudy: 0, visits: 0 },
+        { unitId: 'u1', present: true,  lesson: false, pg: false, mission: false, bibleStudy: 0, visits: 0 },
+        { unitId: 'u2', present: false, lesson: false, pg: false, mission: false, bibleStudy: 0, visits: 0 },
+      ],
+    }];
+    const result = calcStats(docs, UNITS, WEIGHTS);
+    expect(result.unitStats['u1'].presenceRate).toBe(100);
+    expect(result.unitStats['u2'].presenceRate).toBe(0);
+    expect(result.unitStats['u1'].recordCount).toBe(2);
+    expect(result.unitStats['u2'].recordCount).toBe(1);
   });
 });

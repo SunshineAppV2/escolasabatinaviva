@@ -3,8 +3,7 @@ import { MoreHorizontal, ChevronRight, Crown, Calendar } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';
 import { useRollCallStats } from '../hooks/useRollCallStats';
 import { logger } from '../lib/logger';
-
-const DEFAULT_WEIGHTS = { presence: 10, lesson: 10, pg: 10, bibleStudy: 15, mission: 20, visit: 5 };
+import { DEFAULT_WEIGHTS } from '../lib/constants';
 
 /* ── Mini sparkline SVG ───────────────────────────────────────────────────── */
 function Sparkline({ values = [], color = 'white' }) {

@@ -1,31 +1,35 @@
 import React from 'react';
-import { useFirestore } from '../hooks/useFirestore';
+import { useFirestore, WhereClause } from '../hooks/useFirestore';
 import { useRollCallStats } from '../hooks/useRollCallStats';
 import { Printer, Share2, BarChart3, Award, TrendingUp, Users } from 'lucide-react';
+import { DEFAULT_WEIGHTS } from '../lib/constants';
+import { ScoreWeights, HierarchyItem } from '../types';
 
-const DEFAULT_WEIGHTS = { presence: 10, lesson: 10, pg: 10, bibleStudy: 15, mission: 20, visit: 5 };
+interface ScoreWeightsDoc extends ScoreWeights { [key: string]: unknown }
+interface HierarchyDoc { unidades?: HierarchyItem[]; [key: string]: unknown }
+interface QuarterDoc   { status: string; name: string; id: string; [key: string]: unknown }
 
 function Reports() {
-  const { data: firestoreMembers }  = useFirestore('members');
-  const { data: firestoreHierarchy } = useFirestore('hierarchy');
-  const { data: scoreWeightsDocs }  = useFirestore('scoreWeights');
-  const { data: quartersData }      = useFirestore('quarters');
+  const { data: firestoreMembers }   = useFirestore<{ name: string }>('members');
+  const { data: firestoreHierarchy } = useFirestore<HierarchyDoc>('hierarchy');
+  const { data: scoreWeightsDocs }   = useFirestore<ScoreWeightsDoc>('scoreWeights');
+  const { data: quartersData }       = useFirestore<QuarterDoc>('quarters');
 
   const units = React.useMemo(() => {
     const doc = firestoreHierarchy[0];
     return doc && Array.isArray(doc.unidades) ? doc.unidades : [];
   }, [firestoreHierarchy]);
 
-  const weights = React.useMemo(() => {
+  const weights = React.useMemo((): ScoreWeights => {
     const doc = scoreWeightsDocs[0];
     if (!doc) return DEFAULT_WEIGHTS;
     return {
-      presence:   doc.presence   ?? DEFAULT_WEIGHTS.presence,
-      lesson:     doc.lesson     ?? DEFAULT_WEIGHTS.lesson,
-      pg:         doc.pg         ?? DEFAULT_WEIGHTS.pg,
-      bibleStudy: doc.bibleStudy ?? DEFAULT_WEIGHTS.bibleStudy,
-      mission:    doc.mission    ?? DEFAULT_WEIGHTS.mission,
-      visit:      doc.visit      ?? DEFAULT_WEIGHTS.visit,
+      presence:   (doc.presence   as number) ?? DEFAULT_WEIGHTS.presence,
+      lesson:     (doc.lesson     as number) ?? DEFAULT_WEIGHTS.lesson,
+      pg:         (doc.pg         as number) ?? DEFAULT_WEIGHTS.pg,
+      bibleStudy: (doc.bibleStudy as number) ?? DEFAULT_WEIGHTS.bibleStudy,
+      mission:    (doc.mission    as number) ?? DEFAULT_WEIGHTS.mission,
+      visit:      (doc.visit      as number) ?? DEFAULT_WEIGHTS.visit,
     };
   }, [scoreWeightsDocs]);
 
@@ -35,11 +39,11 @@ function Reports() {
   );
 
   const rollCallFilters = React.useMemo(
-    () => activeQuarter ? [{ field: 'quarterId', op: '==', value: activeQuarter.id }] : [],
+    () => activeQuarter ? [{ field: 'quarterId', op: '==' as const, value: activeQuarter.id }] as WhereClause[] : [],
     [activeQuarter]
   );
 
-  const { presenceRate, lessonRate, missionTotal, leaderboard } =
+  const { presenceRate, missionTotal, leaderboard, unitStats } =
     useRollCallStats(units, weights, rollCallFilters);
 
   const totalMembers = firestoreMembers.length;
@@ -54,7 +58,7 @@ function Reports() {
               <BarChart3 color="var(--secondary)" /> Relatórios de Excelência
             </h2>
             <p style={{ color: 'var(--text-muted)' }}>
-              {activeQuarter ? activeQuarter.name : 'Nenhum trimestre ativo'} — consolidado de todas as unidades
+              {activeQuarter ? String(activeQuarter.name) : 'Nenhum trimestre ativo'} — consolidado de todas as unidades
             </p>
           </div>
           <div style={{ display: 'flex', gap: '15px' }}>
@@ -74,7 +78,7 @@ function Reports() {
             </div>
             <h1 style={{ fontSize: '2rem', fontWeight: '900', letterSpacing: '-1px' }}>RELATÓRIO CONSOLIDADO TRIMESTRAL</h1>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '1rem', color: 'var(--secondary)', fontWeight: 800, fontSize: '0.8rem', letterSpacing: '1px' }}>
-              <span>{activeQuarter ? activeQuarter.name.toUpperCase() : 'SEM TRIMESTRE ATIVO'}</span>
+              <span>{activeQuarter ? String(activeQuarter.name).toUpperCase() : 'SEM TRIMESTRE ATIVO'}</span>
               <span>•</span>
               <span>UNIDADE VIVA</span>
               <span>•</span>
@@ -132,7 +136,7 @@ function Reports() {
                   leaderboard.map((u, idx) => (
                     <tr key={u.id}>
                       <td>{idx + 1}º {u.name}</td>
-                      <td style={{ color: 'var(--accent-green)' }}>{lessonRate}%</td>
+                      <td style={{ color: 'var(--accent-green)' }}>{unitStats[u.id]?.lessonRate ?? 0}%</td>
                       <td style={{ fontWeight: '900', color: 'var(--secondary)' }}>{u.points} pts</td>
                       <td style={{ textAlign: 'right' }}>
                         <span style={{

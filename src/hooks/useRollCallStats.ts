@@ -8,6 +8,12 @@ export interface UnitScore {
   points: number;
 }
 
+export interface UnitStats {
+  presenceRate: number;
+  lessonRate: number;
+  recordCount: number;
+}
+
 export interface RollCallStats {
   presenceRate: number;
   lessonRate: number;
@@ -17,6 +23,7 @@ export interface RollCallStats {
   presentsTotal: number;
   leaderboard: UnitScore[];
   chartData: { name: string; points: number }[];
+  unitStats: Record<string, UnitStats>;
 }
 
 /**
@@ -34,7 +41,11 @@ export function useRollCallStats(
   const { data: rollCallsData } = useFirestore('rollCalls', filters);
 
   return useMemo(() => {
-    const scores: Record<string, number> = {};
+    const scores:   Record<string, number> = {};
+    const uPresent: Record<string, number> = {};
+    const uLesson:  Record<string, number> = {};
+    const uCount:   Record<string, number> = {};
+
     let totalPresents = 0;
     let totalLessons  = 0;
     let totalMission  = 0;
@@ -49,17 +60,22 @@ export function useRollCallStats(
 
     records.forEach((r) => {
       const uId = r.unitId || 'unknown';
-      if (!scores[uId]) scores[uId] = 0;
+      if (!scores[uId])   scores[uId]   = 0;
+      if (!uPresent[uId]) uPresent[uId] = 0;
+      if (!uLesson[uId])  uLesson[uId]  = 0;
+      if (!uCount[uId])   uCount[uId]   = 0;
 
-      if (r.present) { scores[uId] += weights.presence; totalPresents++; }
-      if (r.lesson)  { scores[uId] += weights.lesson;   totalLessons++;  }
+      uCount[uId]++;
+      totalRecords++;
+
+      if (r.present) { scores[uId] += weights.presence; uPresent[uId]++; totalPresents++; }
+      if (r.lesson)  { scores[uId] += weights.lesson;   uLesson[uId]++;  totalLessons++;  }
       if (r.pg)      { scores[uId] += weights.pg;       totalPg++;       }
       if (r.mission) { scores[uId] += weights.mission;  totalMission++;  }
 
-      scores[uId]  += (r.bibleStudy || 0) * weights.bibleStudy;
-      scores[uId]  += (r.visits     || 0) * weights.visit;
-      totalVisits  += (r.visits     || 0);
-      totalRecords++;
+      scores[uId] += (r.bibleStudy || 0) * weights.bibleStudy;
+      scores[uId] += (r.visits     || 0) * weights.visit;
+      totalVisits += (r.visits     || 0);
     });
 
     const leaderboard: UnitScore[] = units
@@ -71,6 +87,16 @@ export function useRollCallStats(
       points: u.points,
     }));
 
+    const unitStats: Record<string, UnitStats> = {};
+    for (const uId of Object.keys(uCount)) {
+      const n = uCount[uId];
+      unitStats[uId] = {
+        presenceRate: n > 0 ? Math.round((uPresent[uId] / n) * 100) : 0,
+        lessonRate:   n > 0 ? Math.round((uLesson[uId]  / n) * 100) : 0,
+        recordCount:  n,
+      };
+    }
+
     return {
       presenceRate:  totalRecords > 0 ? Math.round((totalPresents / totalRecords) * 100) : 0,
       lessonRate:    totalRecords > 0 ? Math.round((totalLessons  / totalRecords) * 100) : 0,
@@ -80,6 +106,7 @@ export function useRollCallStats(
       presentsTotal: totalPresents,
       leaderboard,
       chartData,
+      unitStats,
     };
   }, [rollCallsData, weights, units]);
 }
