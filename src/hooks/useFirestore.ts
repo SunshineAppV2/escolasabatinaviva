@@ -26,8 +26,13 @@ export interface WhereClause {
  *                         vazio ou omitindo, retorna todos os documentos.
  *                         Exemplo: [{ field: 'unitId', op: '==', value: 't1' }]
  */
-export const useFirestore = (collectionName: string, filters: WhereClause[] = []) => {
-  const [data, setData] = useState<any[]>([]);
+export type FirestoreDoc<T> = T & { id: string };
+
+export const useFirestore = <T extends Record<string, unknown>>(
+  collectionName: string,
+  filters: WhereClause[] = [],
+) => {
+  const [data, setData] = useState<FirestoreDoc<T>[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,9 +46,9 @@ export const useFirestore = (collectionName: string, filters: WhereClause[] = []
     const unsubscribe = onSnapshot(
       q,
       (querySnapshot) => {
-        const items: any[] = [];
+        const items: FirestoreDoc<T>[] = [];
         querySnapshot.forEach((docSnap) => {
-          items.push({ id: docSnap.id, ...docSnap.data() });
+          items.push({ id: docSnap.id, ...docSnap.data() } as FirestoreDoc<T>);
         });
         setData(items);
         setLoading(false);
@@ -58,7 +63,7 @@ export const useFirestore = (collectionName: string, filters: WhereClause[] = []
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collectionName, filtersKey]);
 
-  const addItem = async (item: any): Promise<string | null> => {
+  const addItem = async (item: Omit<T, 'id'>): Promise<string | null> => {
     try {
       const docRef = await addDoc(collection(db, collectionName), item);
       return docRef.id;
@@ -68,9 +73,9 @@ export const useFirestore = (collectionName: string, filters: WhereClause[] = []
     }
   };
 
-  const updateItem = async (id: string, item: any) => {
+  const updateItem = async (id: string, item: Partial<Omit<T, 'id'>>) => {
     try {
-      await updateDoc(doc(db, collectionName, id), item);
+      await updateDoc(doc(db, collectionName, id), item as Record<string, unknown>);
     } catch (err) {
       setError((err as Error).message);
     }

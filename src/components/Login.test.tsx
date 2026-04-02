@@ -11,10 +11,10 @@ describe('Login component', () => {
     const passwordInput = screen.getByPlaceholderText(/Senha/i);
     const submitButton = screen.getByRole('button', { name: /Entrar Agora/i });
 
-    fireEvent.change(emailInput, { target: { value: 'admin' } });
-    fireEvent.change(passwordInput, { target: { value: 'Ascg@232430' } });
+    fireEvent.change(emailInput, { target: { value: 'test@example.com' } });
+    fireEvent.change(passwordInput, { target: { value: 'test-password' } });
     fireEvent.click(submitButton);
 
-    expect(handleLogin).toHaveBeenCalledWith('admin', 'Ascg@232430');
+    expect(handleLogin).toHaveBeenCalledWith('test@example.com', 'test-password');
   });
 });

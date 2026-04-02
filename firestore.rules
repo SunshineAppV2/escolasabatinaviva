@@ -42,11 +42,12 @@ service cloud.firestore {
     }
 
     // ── members ───────────────────────────────────────────────────────────────
-    // Leitura liberada para qualquer usuário autenticado — necessário para o
-    // bootstrap do perfil (primeiro login, antes de users/{uid} existir).
-    // Escrita protegida por papel.
+    // Staff pode ler todos os membros da hierarquia.
+    // Membros comuns só podem ler o próprio registro (bootstrap de perfil no
+    // primeiro login: AppContext busca members onde email == auth.token.email).
     match /members/{memberId} {
-      allow read: if isSignedIn();
+      allow read: if isStaff()
+                  || (isSignedIn() && resource.data.email == request.auth.token.email);
 
       allow create: if isAdmin();
 

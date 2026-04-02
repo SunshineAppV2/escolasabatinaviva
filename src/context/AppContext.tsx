@@ -4,6 +4,7 @@ import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
 import { useFirestore } from '../hooks/useFirestore';
+import { logger } from '../lib/logger';
 
 interface AppContextType {
   user: User | null;
@@ -56,7 +57,7 @@ async function fetchMemberProfile(uid: string, email: string): Promise<Partial<U
       }
       cachedRole = d.role;
     }
-  } catch { /* ignora — pode não existir ainda */ }
+  } catch (err) { logger.warn('users/{uid} não encontrado no primeiro login', err); }
 
   // ── Passo 2: busca em members por email ──────────────────────────────────
   try {
@@ -92,9 +93,10 @@ async function fetchMemberProfile(uid: string, email: string): Promise<Partial<U
     );
 
     return profile;
-  } catch {
+  } catch (err) {
     // Regras ainda não publicadas no Firebase Console —
     // devolve o que havia em users/{uid} (pode ser 'Membro') ou vazio.
+    logger.warn('Falha ao buscar perfil em members — usando fallback de users/{uid}', err);
     return cachedRole ? { role: cachedRole as User['role'] } : {};
   }
 }
