@@ -35,10 +35,10 @@ function RollCall({ user, onBack }) {
     [quartersData]
   );
 
-  // Filtro de membros: secretário vê só sua unidade
+  // Filtro de membros: editores de unidade veem só sua unidade
   const memberFilters = useMemo(
     () =>
-      user?.role === 'Secretário' && user?.unitId
+      (user?.role === 'Professor ES' || user?.role === 'Secretário de Unidade') && user?.unitId
         ? [{ field: 'unitId', op: '==', value: user.unitId }]
         : [],
     [user?.role, user?.unitId]
@@ -69,7 +69,7 @@ function RollCall({ user, onBack }) {
 
   // Define unidade inicial conforme papel do usuário
   useEffect(() => {
-    if (user?.role === 'Secretário' && user?.unitId) {
+    if ((user?.role === 'Professor ES' || user?.role === 'Secretário de Unidade') && user?.unitId) {
       setActiveUnit(user.unitId);
     } else if (units.length > 0 && !activeUnit) {
       setActiveUnit(units[0].id);
@@ -275,8 +275,8 @@ function RollCall({ user, onBack }) {
           ))}
         </div>
 
-        {/* Seletor de unidade (admin/pastor/diretor) */}
-        {user?.role !== 'Secretário' && units.length > 0 && (
+        {/* Seletor de unidade (admin/pastor/diretor — editores de unidade têm unidade fixa) */}
+        {user?.role !== 'Professor ES' && user?.role !== 'Secretário de Unidade' && units.length > 0 && (
           <div style={{
             background: 'rgba(255,255,255,0.02)',
             border: '1px solid rgba(255,255,255,0.06)',

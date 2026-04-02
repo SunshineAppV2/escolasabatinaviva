@@ -18,9 +18,6 @@ service cloud.firestore {
     function getRole()     { return userData().role; }
     function getUnitId()   { return userData().unitId; }
     function getChurchId() { return userData().churchId; }
-    function getDistId()   { return userData().distId; }
-    function getAssocId()  { return userData().assocId; }
-    function getUnionId()  { return userData().unionId; }
 
     // ── Funções de papel ──────────────────────────────────────────────────────
 

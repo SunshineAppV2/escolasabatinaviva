@@ -1,4 +1,29 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "rollCalls",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "quarterId", "order": "ASCENDING" },
+        { "fieldPath": "unitId",    "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "rollCalls",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "unitId",    "order": "ASCENDING" },
+        { "fieldPath": "quarterId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "goals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "unitId",    "order": "ASCENDING" },
+        { "fieldPath": "quarterId", "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }
