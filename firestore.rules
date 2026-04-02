@@ -97,5 +97,24 @@ service cloud.firestore {
       allow read:  if isStaff();
       allow write: if isAdmin();
     }
+
+    // ── goals ─────────────────────────────────────────────────────────────────
+    // Documento ID: {quarterId}_{unitId}
+    // Secretário lê/escreve apenas a meta da própria unidade.
+    // Diretor, Pastor e Admin lêem/escrevem qualquer meta.
+    match /goals/{goalId} {
+      allow read: if isAdmin() || isPastor() || isDirector()
+                  || (isSecretary() && resource.data.unitId == getUnitId());
+
+      allow create: if isAdmin() || isPastor() || isDirector()
+                    || (isSecretary()
+                        && request.resource.data.unitId != null
+                        && request.resource.data.unitId == getUnitId());
+
+      allow update: if isAdmin() || isPastor() || isDirector()
+                    || (isSecretary() && resource.data.unitId == getUnitId());
+
+      allow delete: if isAdmin();
+    }
   }
 }
