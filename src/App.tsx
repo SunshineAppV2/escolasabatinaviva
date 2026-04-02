@@ -16,6 +16,12 @@ import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
 const Hierarchy = React.lazy(() => import('./components/Hierarchy.tsx'));
 
+// O evento BeforeInstallPromptEvent não consta nos tipos padrão do DOM
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): void;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
 import {
   Compass,
   User as UserIcon,
@@ -48,7 +54,7 @@ function App() {
 
   const [view, setView] = useState<string>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -66,9 +72,8 @@ function App() {
 
   const installPWA = () => {
     if (!deferredPrompt) return;
-    const promptEvent = deferredPrompt as any;
-    promptEvent.prompt();
-    promptEvent.userChoice.then((choiceResult: { outcome: string }) => {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult) => {
       if (choiceResult.outcome === 'accepted') setDeferredPrompt(null);
     });
   };
@@ -86,14 +91,14 @@ function App() {
       await signInWithEmailAndPassword(auth, normalizedEmail, normalizedPassword);
       setScreen('dashboard');
     } catch (error: unknown) {
-      const code = (error as any)?.code ?? '';
+      const e = error as { code?: string; message?: string };
       const msgs: Record<string, string> = {
-        'auth/user-not-found':    'Usuário não encontrado. Verifique o e-mail.',
-        'auth/wrong-password':    'Senha incorreta.',
+        'auth/user-not-found':     'Usuário não encontrado. Verifique o e-mail.',
+        'auth/wrong-password':     'Senha incorreta.',
         'auth/invalid-credential': 'Credenciais inválidas.',
-        'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos.',
+        'auth/too-many-requests':  'Muitas tentativas. Aguarde alguns minutos.',
       };
-      toast(msgs[code] ?? `Falha no login: ${(error as any)?.message ?? 'Erro desconhecido'}`, 'error');
+      toast(msgs[e.code ?? ''] ?? `Falha no login: ${e.message ?? 'Erro desconhecido'}`, 'error');
     }
   };
 
@@ -103,7 +108,8 @@ function App() {
       setScreen('welcome');
       setUser(null);
     } catch (error: unknown) {
-      toast(`Erro ao sair: ${(error as any)?.message ?? 'Falha ao encerrar sessão'}`, 'error');
+      const e = error as { message?: string };
+      toast(`Erro ao sair: ${e.message ?? 'Falha ao encerrar sessão'}`, 'error');
     }
   };
 

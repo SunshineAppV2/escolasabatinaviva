@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "jest",
-    "seed:firestore": "node scripts/seedFirestore.mjs"
+    "seed:firestore": "node scripts/seedFirestore.mjs",
+    "prepare": "husky"
   },
   "dependencies": {
     "firebase": "^12.11.0",
@@ -38,10 +39,16 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "husky": "^9.1.7",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0",
+    "lint-staged": "^16.4.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.1"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": ["eslint --fix", "eslint"],
+    "*.{js,mjs}": ["eslint --fix", "eslint"]
   }
 }
