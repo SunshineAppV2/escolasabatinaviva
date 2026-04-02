@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { z } from 'zod';
 import { useAppContext } from '../context/AppContext';
 import { UserPlus, User, Users, Trash2, Edit2, Search, X, Save, Mail, Lock, Phone, UserSearch } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';
@@ -13,6 +14,20 @@ const EMPTY_FORM = {
   name: '', role: 'Membro', email: '', password: '',
   unitId: '', churchId: '', distId: '', phone: '',
 };
+
+const memberSchema = z.object({
+  name:  z.string().min(2, 'Informe o nome completo do membro.'),
+  email: z.string().email('E-mail inválido.').or(z.literal('')),
+  password: z.string().min(6, 'A senha deve ter no mínimo 6 caracteres.').or(z.literal('')),
+  phone: z.string().regex(/^[\d\s()\-+]*$/, 'Telefone inválido.').or(z.literal('')),
+  role:     z.string(),
+  unitId:   z.string(),
+  churchId: z.string(),
+  distId:   z.string(),
+}).refine(
+  (d) => !(d.email && !d.password),
+  { message: 'Informe uma senha provisória para criar o login.', path: ['password'] },
+);
 
 /**
  * Cria uma conta Firebase Auth para o novo membro sem deslogar o admin.
@@ -45,6 +60,7 @@ function Members() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formData, setFormData] = useState(EMPTY_FORM);
 
   useEffect(() => {
@@ -56,16 +72,9 @@ function Members() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.name.trim()) {
-      toast('Informe o nome completo do membro.', 'error');
-      return;
-    }
-    if (formData.email && !formData.password) {
-      toast('Informe uma senha provisória para criar o login.', 'error');
-      return;
-    }
-    if (formData.password && formData.password.length < 6) {
-      toast('A senha deve ter no mínimo 6 caracteres.', 'error');
+    const validation = memberSchema.safeParse(formData);
+    if (!validation.success) {
+      toast(validation.error.errors[0].message, 'error');
       return;
     }
 
@@ -117,10 +126,16 @@ function Members() {
   };
 
   const handleDelete = async (m) => {
+    if (deletingId) return;
     if (!window.confirm(`Remover "${m.name}" do sistema?`)) return;
-    await deleteMemberItem(m.id);
-    setMembers((prev) => prev.filter((x) => x.id !== m.id));
-    toast('Membro removido.', 'info');
+    setDeletingId(m.id);
+    try {
+      await deleteMemberItem(m.id);
+      setMembers((prev) => prev.filter((x) => x.id !== m.id));
+      toast('Membro removido.', 'info');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const filteredMembers = members.filter((m) =>
@@ -280,7 +295,8 @@ function Members() {
                           </button>
                           <button
                             className="icon-btn delete"
-                            style={{ opacity: 0.5 }}
+                            style={{ opacity: deletingId === m.id ? 0.3 : 0.5 }}
+                            disabled={!!deletingId}
                             aria-label={`Remover ${m.name}`}
                             onClick={() => handleDelete(m)}
                           >
