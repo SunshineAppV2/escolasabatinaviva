@@ -28,7 +28,7 @@ export interface WhereClause {
  */
 export type FirestoreDoc<T> = T & { id: string };
 
-export const useFirestore = <T extends Record<string, unknown>>(
+export const useFirestore = <T extends object>(
   collectionName: string,
   filters: WhereClause[] = [],
 ) => {
@@ -75,7 +75,7 @@ export const useFirestore = <T extends Record<string, unknown>>(
 
   const updateItem = async (id: string, item: Partial<Omit<T, 'id'>>) => {
     try {
-      await updateDoc(doc(db, collectionName, id), item as Record<string, unknown>);
+      await updateDoc(doc(db, collectionName, id), item as Record<string, unknown>); // cast necessário para SDK do Firestore
     } catch (err) {
       setError((err as Error).message);
     }

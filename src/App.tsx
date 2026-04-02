@@ -1,20 +1,22 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import './App.css';
-import Dashboard from './components/Dashboard.tsx';
-import RollCall from './components/RollCall.tsx';
-import Metas from './components/Metas.tsx';
-import Members from './components/Members.tsx';
+// Componentes leves carregados imediatamente (tela de entrada)
 import Login from './components/Login.tsx';
 import Welcome from './components/Welcome.tsx';
-import Quarters from './components/Quarters.tsx';
-import Reports from './components/Reports.tsx';
-import ScoreConfigs from './components/ScoreConfigs.tsx';
 import { useAppContext } from './context/AppContext';
 import { useToast } from './context/ToastContext';
 import { auth } from './lib/firebase';
 import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
-const Hierarchy = React.lazy(() => import('./components/Hierarchy.tsx'));
+// Componentes pesados carregados sob demanda (lazy)
+const Dashboard   = React.lazy(() => import('./components/Dashboard.tsx'));
+const RollCall    = React.lazy(() => import('./components/RollCall.tsx'));
+const Metas       = React.lazy(() => import('./components/Metas.tsx'));
+const Members     = React.lazy(() => import('./components/Members.tsx'));
+const Hierarchy   = React.lazy(() => import('./components/Hierarchy.tsx'));
+const Quarters    = React.lazy(() => import('./components/Quarters.tsx'));
+const Reports     = React.lazy(() => import('./components/Reports.tsx'));
+const ScoreConfigs = React.lazy(() => import('./components/ScoreConfigs.tsx'));
 
 // O evento BeforeInstallPromptEvent não consta nos tipos padrão do DOM
 interface BeforeInstallPromptEvent extends Event {
@@ -250,20 +252,22 @@ function App() {
             </div>
           )}
 
-          <div className="content-area" key={view}>
-            {view === 'dashboard'     && <Dashboard user={user} onNavigate={navigate} />}
-            {view === 'rollcall'      && <RollCall user={user} onBack={() => navigate('dashboard')} />}
-            {view === 'metas'         && <Metas user={user} onBack={() => navigate('dashboard')} />}
-            {view === 'members'       && <Members user={user} />}
-            {view === 'hierarchy'     && (
-              <Suspense fallback={<div>Carregando...</div>}>
-                <Hierarchy user={user} />
-              </Suspense>
-            )}
-            {view === 'quarters'      && <Quarters user={user} />}
-            {view === 'reports'       && <Reports user={user} />}
-            {view === 'score-weights' && <ScoreConfigs />}
-          </div>
+          <Suspense fallback={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'rgba(255,255,255,0.4)', fontSize: '0.95rem' }}>
+              Carregando...
+            </div>
+          }>
+            <div className="content-area" key={view}>
+              {view === 'dashboard'     && <Dashboard user={user} onNavigate={navigate} />}
+              {view === 'rollcall'      && <RollCall user={user} onBack={() => navigate('dashboard')} />}
+              {view === 'metas'         && <Metas user={user} onBack={() => navigate('dashboard')} />}
+              {view === 'members'       && <Members user={user} />}
+              {view === 'hierarchy'     && <Hierarchy user={user} />}
+              {view === 'quarters'      && <Quarters user={user} />}
+              {view === 'reports'       && <Reports user={user} />}
+              {view === 'score-weights' && <ScoreConfigs />}
+            </div>
+          </Suspense>
         </main>
       </div>
     </div>
