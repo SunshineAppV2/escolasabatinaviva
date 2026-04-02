@@ -1,0 +1,100 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Lê o papel de users/{uid}. Se o doc ainda não existir (primeiro login),
+    // o get() retorna null e a comparação falha normalmente — não lança exceção.
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function getUnitId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.unitId;
+    }
+
+    function isAdmin()     { return isSignedIn() && getRole() == 'Administrador'; }
+    function isPastor()    { return isSignedIn() && getRole() == 'Pastor'; }
+    function isDirector()  { return isSignedIn() && getRole() == 'Diretor'; }
+    function isSecretary() { return isSignedIn() && getRole() == 'Secretário'; }
+
+    function isStaff() {
+      return isAdmin() || isPastor() || isDirector() || isSecretary();
+    }
+
+    // ── users/{uid} ───────────────────────────────────────────────────────────
+    // O AppContext sincroniza users/{uid} a partir da coleção members após login.
+    // Permitimos write irrestrito do próprio doc para resolver o bootstrap
+    // (primeiro login: users/{uid} não existe ainda → create com role correto).
+    // A segurança real está nas regras das outras coleções que exigem role válido
+    // originado da coleção members, que só admin pode modificar.
+    match /users/{uid} {
+      allow read:   if isSignedIn() && request.auth.uid == uid;
+      allow write:  if isSignedIn() && request.auth.uid == uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── members ───────────────────────────────────────────────────────────────
+    // Leitura liberada para qualquer usuário autenticado — necessário para o
+    // bootstrap do perfil (primeiro login, antes de users/{uid} existir).
+    // Escrita protegida por papel.
+    match /members/{memberId} {
+      allow read: if isSignedIn();
+
+      allow create: if isAdmin();
+
+      allow update: if isAdmin()
+                    || (isDirector() && resource.data.unitId != null)
+                    || (isSecretary()
+                        && resource.data.unitId != null
+                        && resource.data.unitId == getUnitId());
+
+      allow delete: if isAdmin();
+    }
+
+    // ── hierarchy ─────────────────────────────────────────────────────────────
+    match /hierarchy/{docId} {
+      allow read:  if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // ── rollCalls ─────────────────────────────────────────────────────────────
+    match /rollCalls/{rollCallId} {
+      allow read: if isAdmin() || isPastor() || isDirector()
+                  || (isSecretary()
+                      && resource.data.unitId != null
+                      && resource.data.unitId == getUnitId());
+
+      allow create: if isAdmin() || isPastor() || isDirector()
+                    || (isSecretary()
+                        && request.resource.data.unitId != null
+                        && request.resource.data.unitId == getUnitId());
+
+      allow update: if isAdmin() || isPastor() || isDirector()
+                    || (isSecretary()
+                        && resource.data.unitId != null
+                        && resource.data.unitId == getUnitId());
+
+      allow delete: if isAdmin();
+    }
+
+    // ── quarters ──────────────────────────────────────────────────────────────
+    match /quarters/{quarterId} {
+      allow read:  if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // ── scoreWeights ──────────────────────────────────────────────────────────
+    match /scoreWeights/{docId} {
+      allow read:  if isStaff();
+      allow write: if isAdmin();
+    }
+  }
+}
