@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { z } from 'zod';
 import { useAppContext } from '../context/AppContext';
-import { UserPlus, User, Users, Trash2, Edit2, Search, X, Save, Mail, Lock, Phone, UserSearch } from 'lucide-react';
+import { UserPlus, User, Users, Trash2, Edit2, Search, X, Save, Mail, Lock, Phone, UserSearch, PlusCircle, MinusCircle } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
@@ -9,21 +9,36 @@ import { firebaseConfig } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useToast } from '../context/ToastContext';
+import { ALL_ROLES, Role } from '../types';
 
 const EMPTY_FORM = {
-  name: '', role: 'Membro', email: '', password: '',
-  unitId: '', churchId: '', distId: '', phone: '',
+  name: '', roles: ['Aluno'] as Role[], email: '', password: '',
+  unitId: '', churchId: '', distId: '', assocId: '', unionId: '', divisaoId: '', phone: '',
+};
+
+// Mapeamento: qual campo de escopo cada papel usa
+const ROLE_SCOPE: Record<Role, { field: string; label: string; hierarchyKey: string } | null> = {
+  'Aluno':                  { field: 'unitId',    label: 'Unidade',    hierarchyKey: 'unidades'   },
+  'Professor ES':           { field: 'unitId',    label: 'Unidade',    hierarchyKey: 'unidades'   },
+  'Secretário de Unidade':  { field: 'unitId',    label: 'Unidade',    hierarchyKey: 'unidades'   },
+  'Ancião':                 { field: 'churchId',  label: 'Igreja',     hierarchyKey: 'igrejas'    },
+  'Diretor ES':             { field: 'churchId',  label: 'Igreja',     hierarchyKey: 'igrejas'    },
+  'Secretário ES':          { field: 'churchId',  label: 'Igreja',     hierarchyKey: 'igrejas'    },
+  'Pastor':                 { field: 'distId',    label: 'Distrito',   hierarchyKey: 'distritos'  },
+  'Coord. Associação':      { field: 'assocId',   label: 'Associação', hierarchyKey: 'associacao' },
+  'Coord. União':           { field: 'unionId',   label: 'União',      hierarchyKey: 'uniao'      },
+  'Coord. Divisão':         { field: 'divisaoId', label: 'Divisão',    hierarchyKey: 'divisao'    },
+  'Administrador':          null,
 };
 
 const memberSchema = z.object({
-  name:  z.string().min(2, 'Informe o nome completo do membro.'),
-  email: z.string().email('E-mail inválido.').or(z.literal('')),
+  name:     z.string().min(2, 'Informe o nome completo do membro.'),
+  email:    z.string().email('E-mail inválido.').or(z.literal('')),
   password: z.string().min(6, 'A senha deve ter no mínimo 6 caracteres.').or(z.literal('')),
-  phone: z.string().regex(/^[\d\s()\-+]*$/, 'Telefone inválido.').or(z.literal('')),
-  role:     z.string(),
-  unitId:   z.string(),
-  churchId: z.string(),
-  distId:   z.string(),
+  phone:    z.string().regex(/^[\d\s()\-+]*$/, 'Telefone inválido.').or(z.literal('')),
+  roles:    z.array(z.string()).min(1, 'Selecione ao menos um papel.'),
+  unitId: z.string(), churchId: z.string(), distId: z.string(),
+  assocId: z.string(), unionId: z.string(), divisaoId: z.string(),
 }).refine(
   (d) => !(d.email && !d.password),
   { message: 'Informe uma senha provisória para criar o login.', path: ['password'] },
@@ -46,7 +61,7 @@ async function createAuthAccount(email, password) {
 }
 
 function Members() {
-  const [members, setMembers] = useState([]);
+  const [members, setMembers] = useState<any[]>([]);
   const { hierarchy } = useAppContext();
   const { toast } = useToast();
 
@@ -55,13 +70,26 @@ function Members() {
     loading: firestoreMembersLoading,
     addItem: addMemberItem,
     deleteItem: deleteMemberItem,
-  } = useFirestore('members');
+  } = useFirestore<Record<string, unknown>>('members');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formData, setFormData] = useState(EMPTY_FORM);
+
+  // Papéis que precisam de vinculação de escopo (únicos por campo)
+  const neededScopes = React.useMemo(() => {
+    const seen = new Set<string>();
+    return formData.roles.reduce<{ role: Role; field: string; label: string; hierarchyKey: string }[]>((acc, role) => {
+      const scope = ROLE_SCOPE[role as Role];
+      if (scope && !seen.has(scope.field)) {
+        seen.add(scope.field);
+        acc.push({ role: role as Role, ...scope });
+      }
+      return acc;
+    }, []);
+  }, [formData.roles]);
 
   useEffect(() => {
     if (!firestoreMembersLoading && firestoreMembers.length > 0) {
@@ -89,9 +117,22 @@ function Members() {
 
       // Dados do membro para Firestore — senha NUNCA é gravada
       const { password: _omit, ...safeData } = formData;
+      // role principal = papel de maior escopo (último da lista ordenada)
+      const sortedRoles = [...safeData.roles].sort(
+        (a, b) => ALL_ROLES.indexOf(b as Role) - ALL_ROLES.indexOf(a as Role)
+      );
+      const primaryRole = sortedRoles[0] as Role;
       const memberDoc = {
         ...safeData,
+        role:  primaryRole,
+        roles: safeData.roles,
         email: safeData.email.trim().toLowerCase(),
+        unitId:    safeData.unitId    || null,
+        churchId:  safeData.churchId  || null,
+        distId:    safeData.distId    || null,
+        assocId:   safeData.assocId   || null,
+        unionId:   safeData.unionId   || null,
+        divisaoId: safeData.divisaoId || null,
         createdAt: new Date().toISOString(),
       };
 
@@ -101,11 +142,15 @@ function Members() {
       // Se criou conta Auth, cria users/{uid} para as regras de segurança
       if (uid) {
         await setDoc(doc(db, 'users', uid), {
-          role: memberDoc.role,
-          unitId:   memberDoc.unitId   || null,
-          churchId: memberDoc.churchId || null,
-          distId:   memberDoc.distId   || null,
-          email:    memberDoc.email,
+          role:      primaryRole,
+          roles:     safeData.roles,
+          unitId:    memberDoc.unitId,
+          churchId:  memberDoc.churchId,
+          distId:    memberDoc.distId,
+          assocId:   memberDoc.assocId,
+          unionId:   memberDoc.unionId,
+          divisaoId: memberDoc.divisaoId,
+          email:     memberDoc.email,
           updatedAt: new Date().toISOString(),
         });
       }
@@ -179,15 +224,40 @@ function Members() {
                     <input style={{ paddingLeft: '3rem' }} value={formData.phone} onChange={(e) => field('phone', e.target.value)} placeholder="(00) 00000-0000" />
                   </div>
                 </div>
-                <div className="premium-input-group">
-                  <label>Função no Sistema</label>
-                  <select value={formData.role} onChange={(e) => field('role', e.target.value)}>
-                    <option>Membro</option>
-                    <option>Secretário</option>
-                    <option>Diretor</option>
-                    <option>Pastor</option>
-                    <option>Administrador</option>
-                  </select>
+                <div className="premium-input-group" style={{ gridColumn: '1 / -1' }}>
+                  <label>Papéis no Sistema <span style={{ opacity: 0.5, fontSize: '0.75rem' }}>(pode ter mais de um)</span></label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    {ALL_ROLES.map((role) => {
+                      const active = formData.roles.includes(role);
+                      return (
+                        <button
+                          key={role}
+                          type="button"
+                          onClick={() => {
+                            const next = active
+                              ? formData.roles.filter((r) => r !== role)
+                              : [...formData.roles, role];
+                            if (next.length > 0) field('roles', next);
+                          }}
+                          style={{
+                            padding: '0.4rem 0.9rem',
+                            borderRadius: '50px',
+                            border: active ? '1px solid var(--secondary)' : '1px solid rgba(255,255,255,0.12)',
+                            background: active ? 'rgba(212,175,55,0.15)' : 'rgba(255,255,255,0.04)',
+                            color: active ? 'var(--secondary)' : 'rgba(255,255,255,0.5)',
+                            fontWeight: active ? 800 : 600,
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '0.3rem',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          {active ? <MinusCircle size={12} /> : <PlusCircle size={12} />}
+                          {role}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -207,33 +277,22 @@ function Members() {
                   </div>
                 </div>
 
-                {formData.role === 'Pastor' && (
-                  <div className="premium-input-group">
-                    <label>Distrito de Atuação</label>
-                    <select value={formData.distId} onChange={(e) => field('distId', e.target.value)}>
-                      <option value="">Selecione...</option>
-                      {(hierarchy.distritos || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                    </select>
-                  </div>
-                )}
-                {formData.role === 'Diretor' && (
-                  <div className="premium-input-group">
-                    <label>Igreja de Atuação</label>
-                    <select value={formData.churchId} onChange={(e) => field('churchId', e.target.value)}>
-                      <option value="">Selecione...</option>
-                      {(hierarchy.igrejas || []).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-                    </select>
-                  </div>
-                )}
-                {(formData.role === 'Secretário' || formData.role === 'Membro') && (
-                  <div className="premium-input-group">
-                    <label>Unidade de Ação</label>
-                    <select value={formData.unitId} onChange={(e) => field('unitId', e.target.value)}>
-                      <option value="">Selecione...</option>
-                      {(hierarchy.unidades || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </select>
-                  </div>
-                )}
+                {/* Campos de escopo dinâmicos baseados nos papéis selecionados */}
+                {neededScopes.map(({ field: scopeField, label, hierarchyKey }) => {
+                  const items = (hierarchy as any)[hierarchyKey] || [];
+                  return (
+                    <div key={scopeField} className="premium-input-group">
+                      <label>{label} de Atuação</label>
+                      <select
+                        value={(formData as any)[scopeField]}
+                        onChange={(e) => field(scopeField, e.target.value)}
+                      >
+                        <option value="">Selecione...</option>
+                        {items.map((i: any) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                      </select>
+                    </div>
+                  );
+                })}
               </div>
 
               <button type="submit" className="btn-login" disabled={saving} style={{ width: 'auto', marginTop: '1.5rem', padding: '1.2rem 4rem' }}>

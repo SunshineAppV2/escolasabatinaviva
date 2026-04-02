@@ -11,9 +11,10 @@ interface HierarchyItem {
   parentId: string | null;
 }
 
-type HierarchyKey = 'uniao' | 'associacao' | 'distritos' | 'igrejas' | 'unidades';
+type HierarchyKey = 'divisao' | 'uniao' | 'associacao' | 'distritos' | 'igrejas' | 'unidades';
 
 interface HierarchyState {
+  divisao:    HierarchyItem[];
   uniao:      HierarchyItem[];
   associacao: HierarchyItem[];
   distritos:  HierarchyItem[];
@@ -27,10 +28,10 @@ interface HierarchyDoc extends HierarchyState {
 }
 
 const EMPTY_HIERARCHY: HierarchyState = {
-  uniao: [], associacao: [], distritos: [], igrejas: [], unidades: [],
+  divisao: [], uniao: [], associacao: [], distritos: [], igrejas: [], unidades: [],
 };
 
-const TABS: HierarchyKey[] = ['uniao', 'associacao', 'distritos', 'igrejas', 'unidades'];
+const TABS: HierarchyKey[] = ['divisao', 'uniao', 'associacao', 'distritos', 'igrejas', 'unidades'];
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ function Hierarchy() {
     if (!firestoreHierarchyLoading && firestoreHierarchy.length > 0) {
       const [doc] = firestoreHierarchy;
       setHierarchy({
+        divisao:    Array.isArray(doc.divisao)    ? doc.divisao    : [],
         uniao:      Array.isArray(doc.uniao)      ? doc.uniao      : [],
         associacao: Array.isArray(doc.associacao) ? doc.associacao : [],
         distritos:  Array.isArray(doc.distritos)  ? doc.distritos  : [],
@@ -69,7 +71,8 @@ function Hierarchy() {
 
   const parents: HierarchyItem[] = React.useMemo(() => {
     const map: Record<HierarchyKey, HierarchyKey | null> = {
-      uniao:      null,
+      divisao:    null,
+      uniao:      'divisao',
       associacao: 'uniao',
       distritos:  'associacao',
       igrejas:    'distritos',
@@ -148,7 +151,8 @@ function Hierarchy() {
 
   const getIcon = (type: HierarchyKey) => {
     switch (type) {
-      case 'uniao':      return <Compass   size={18} />;
+      case 'divisao':    return <Compass   size={18} />;
+      case 'uniao':      return <Building2 size={18} />;
       case 'associacao': return <Building2 size={18} />;
       case 'distritos':  return <MapPin    size={18} />;
       case 'igrejas':    return <Church    size={18} />;
@@ -280,22 +284,30 @@ function Hierarchy() {
             <Layers size={22} /> Estrutura Consolidada do Sistema
           </h3>
           <div className="tree-container glass-card" style={{ padding: '2.5rem' }}>
-            {hierarchy.uniao.length === 0 && (
+            {hierarchy.divisao.length === 0 && (
               <p style={{ opacity: 0.3, textAlign: 'center', padding: '2rem' }}>
-                Aguardando configuração de raiz para gerar visualização.
+                Aguardando configuração de Divisão para gerar visualização.
               </p>
             )}
-            {hierarchy.uniao.map((u) => (
-              <div key={u.id} style={{ marginBottom: '2rem' }}>
+            {hierarchy.divisao.map((div) => (
+              <div key={div.id} style={{ marginBottom: '2rem' }}>
+                {/* Divisão */}
                 <div style={{ fontWeight: 900, color: 'var(--secondary)', fontSize: '1.1rem', background: 'rgba(212,175,55,0.1)', padding: '0.8rem 1.2rem', borderRadius: '10px', display: 'inline-block' }}>
-                  {u.name}
+                  {div.name}
                 </div>
-                {hierarchy.associacao.filter((a) => a.parentId === u.id).map((a) => (
-                  <div key={a.id} style={{ marginLeft: '2.5rem', borderLeft: '2px solid rgba(212,175,55,0.2)', paddingLeft: '1.5rem', marginTop: '1rem' }}>
-                    <div style={{ fontWeight: 700, padding: '0.5rem 0' }}>{a.name}</div>
-                    {hierarchy.distritos.filter((d) => d.parentId === a.id).map((d) => (
-                      <div key={d.id} style={{ marginLeft: '2rem', fontSize: '0.9rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px', padding: '0.3rem 0' }}>
-                        <ChevronRight size={14} color="var(--secondary)" /> {d.name}
+                {hierarchy.uniao.filter((u) => u.parentId === div.id).map((u) => (
+                  <div key={u.id} style={{ marginLeft: '2rem', borderLeft: '2px solid rgba(212,175,55,0.2)', paddingLeft: '1.5rem', marginTop: '1rem' }}>
+                    {/* União */}
+                    <div style={{ fontWeight: 800, padding: '0.4rem 0', fontSize: '1rem' }}>{u.name}</div>
+                    {hierarchy.associacao.filter((a) => a.parentId === u.id).map((a) => (
+                      <div key={a.id} style={{ marginLeft: '2rem', borderLeft: '2px solid rgba(255,255,255,0.08)', paddingLeft: '1.2rem', marginTop: '0.5rem' }}>
+                        {/* Associação */}
+                        <div style={{ fontWeight: 700, padding: '0.3rem 0', fontSize: '0.95rem' }}>{a.name}</div>
+                        {hierarchy.distritos.filter((d) => d.parentId === a.id).map((d) => (
+                          <div key={d.id} style={{ marginLeft: '1.5rem', fontSize: '0.9rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px', padding: '0.25rem 0' }}>
+                            <ChevronRight size={14} color="var(--secondary)" /> {d.name}
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>

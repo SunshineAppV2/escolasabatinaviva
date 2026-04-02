@@ -17,6 +17,8 @@ const Hierarchy   = React.lazy(() => import('./components/Hierarchy.tsx'));
 const Quarters    = React.lazy(() => import('./components/Quarters.tsx'));
 const Reports     = React.lazy(() => import('./components/Reports.tsx'));
 const ScoreConfigs = React.lazy(() => import('./components/ScoreConfigs.tsx'));
+// RoleSelector é leve — não precisa de lazy
+import RoleSelector from './components/RoleSelector.tsx';
 
 // O evento BeforeInstallPromptEvent não consta nos tipos padrão do DOM
 interface BeforeInstallPromptEvent extends Event {
@@ -41,7 +43,7 @@ import {
 } from 'lucide-react';
 
 function App() {
-  const { user, setUser, profileLoading } = useAppContext();
+  const { user, setUser, profileLoading, pendingRoles, selectRole } = useAppContext();
   const { toast } = useToast();
 
   const [screen, setScreen] = useState<'welcome' | 'login' | 'dashboard'>('welcome');
@@ -118,7 +120,7 @@ function App() {
   const isAdmin = user?.role === 'Administrador';
 
   // Admin é master: enxerga tudo sem restrição.
-  // Para os demais papéis, a função can() controla o acesso.
+  // can() verifica o papel ativo (user.role) exatamente contra a lista de papéis permitidos.
   const can = (...roles: string[]) => isAdmin || roles.includes(user?.role ?? '');
 
   if (profileLoading) {
@@ -135,6 +137,11 @@ function App() {
 
   if (screen === 'login') {
     return <Login onLogin={handleLogin} installPWA={installPWA} isInstallable={!!deferredPrompt} />;
+  }
+
+  // Usuário autenticado mas com múltiplos papéis — precisa escolher a sessão
+  if (pendingRoles) {
+    return <RoleSelector roles={pendingRoles} onSelect={selectRole} />;
   }
 
   return (
@@ -169,32 +176,32 @@ function App() {
           </div>
 
           {/* Operacional */}
-          {can('Secretário', 'Diretor', 'Pastor') && (
+          {can('Professor ES', 'Secretário de Unidade', 'Ancião', 'Diretor ES', 'Secretário ES', 'Pastor', 'Coord. Associação', 'Coord. União', 'Coord. Divisão') && (
             <span className="sidebar-section-label">Operacional</span>
           )}
 
-          {can('Secretário', 'Diretor', 'Pastor') && (
+          {can('Professor ES', 'Secretário de Unidade') && (
             <div className={`sidebar-item ${view === 'rollcall' ? 'active' : ''}`} onClick={() => navigate('rollcall')}>
               <Calendar size={18} />
               Chamada
             </div>
           )}
 
-          {can('Secretário', 'Diretor', 'Pastor') && (
+          {can('Professor ES', 'Secretário de Unidade') && (
             <div className={`sidebar-item ${view === 'metas' ? 'active' : ''}`} onClick={() => navigate('metas')}>
               <Star size={18} />
               Metas
             </div>
           )}
 
-          {can('Diretor', 'Pastor') && (
+          {can('Diretor ES', 'Secretário ES', 'Pastor', 'Coord. Associação', 'Coord. União', 'Coord. Divisão') && (
             <div className={`sidebar-item ${view === 'reports' ? 'active' : ''}`} onClick={() => navigate('reports')}>
               <BarChart2 size={18} />
               Relatórios
             </div>
           )}
 
-          {can('Diretor', 'Pastor') && (
+          {can('Diretor ES', 'Secretário ES', 'Pastor', 'Coord. Associação', 'Coord. União', 'Coord. Divisão') && (
             <div className={`sidebar-item ${view === 'quarters' ? 'active' : ''}`} onClick={() => navigate('quarters')}>
               <Timer size={18} />
               Trimestres

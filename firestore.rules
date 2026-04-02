@@ -9,31 +9,65 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Lê o papel de users/{uid}. Se o doc ainda não existir (primeiro login),
-    // o get() retorna null e a comparação falha normalmente — não lança exceção.
-    function getRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    // Lê dados de users/{uid}. Se o doc ainda não existir (primeiro login),
+    // get() retorna null e comparações falham normalmente sem lançar exceção.
+    function userData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function getUnitId() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.unitId;
+    function getRole()     { return userData().role; }
+    function getUnitId()   { return userData().unitId; }
+    function getChurchId() { return userData().churchId; }
+    function getDistId()   { return userData().distId; }
+    function getAssocId()  { return userData().assocId; }
+    function getUnionId()  { return userData().unionId; }
+
+    // ── Funções de papel ──────────────────────────────────────────────────────
+
+    function isAdmin() {
+      return isSignedIn() && getRole() == 'Administrador';
     }
 
-    function isAdmin()     { return isSignedIn() && getRole() == 'Administrador'; }
-    function isPastor()    { return isSignedIn() && getRole() == 'Pastor'; }
-    function isDirector()  { return isSignedIn() && getRole() == 'Diretor'; }
-    function isSecretary() { return isSignedIn() && getRole() == 'Secretário'; }
+    // Editores de unidade: podem criar/editar chamada e metas da própria unidade
+    function isUnitEditor() {
+      return isSignedIn() && (
+        getRole() == 'Professor ES' ||
+        getRole() == 'Secretário de Unidade'
+      );
+    }
 
+    // Staff de igreja: visualizam e emitem relatórios
+    function isChurchStaff() {
+      return isSignedIn() && (
+        getRole() == 'Ancião' ||
+        getRole() == 'Diretor ES' ||
+        getRole() == 'Secretário ES'
+      );
+    }
+
+    // Pastor: visualiza o distrito
+    function isPastor() {
+      return isSignedIn() && getRole() == 'Pastor';
+    }
+
+    // Coordenadores de associação, união e divisão: somente leitura
+    function isCoord() {
+      return isSignedIn() && (
+        getRole() == 'Coord. Associação' ||
+        getRole() == 'Coord. União'      ||
+        getRole() == 'Coord. Divisão'
+      );
+    }
+
+    // Qualquer papel com acesso ao sistema (exceto Aluno)
     function isStaff() {
-      return isAdmin() || isPastor() || isDirector() || isSecretary();
+      return isAdmin() || isUnitEditor() || isChurchStaff() || isPastor() || isCoord();
     }
 
     // ── users/{uid} ───────────────────────────────────────────────────────────
-    // O AppContext sincroniza users/{uid} a partir da coleção members após login.
-    // Permitimos write irrestrito do próprio doc para resolver o bootstrap
-    // (primeiro login: users/{uid} não existe ainda → create com role correto).
-    // A segurança real está nas regras das outras coleções que exigem role válido
-    // originado da coleção members, que só admin pode modificar.
+    // AppContext sincroniza users/{uid} a partir de members após login.
+    // write irrestrito do próprio doc resolve o bootstrap (primeiro login).
+    // Administrador pode atualizar ou deletar qualquer doc de usuário.
     match /users/{uid} {
       allow read:   if isSignedIn() && request.auth.uid == uid;
       allow write:  if isSignedIn() && request.auth.uid == uid;
@@ -42,9 +76,7 @@ service cloud.firestore {
     }
 
     // ── members ───────────────────────────────────────────────────────────────
-    // Staff pode ler todos os membros da hierarquia.
-    // Membros comuns só podem ler o próprio registro (bootstrap de perfil no
-    // primeiro login: AppContext busca members onde email == auth.token.email).
+    // Staff lê todos; membros comuns lêem apenas o próprio registro (bootstrap).
     match /members/{memberId} {
       allow read: if isStaff()
                   || (isSignedIn() && resource.data.email == request.auth.token.email);
@@ -52,8 +84,10 @@ service cloud.firestore {
       allow create: if isAdmin();
 
       allow update: if isAdmin()
-                    || (isDirector() && resource.data.unitId != null)
-                    || (isSecretary()
+                    || (isChurchStaff()
+                        && resource.data.churchId != null
+                        && resource.data.churchId == getChurchId())
+                    || (isUnitEditor()
                         && resource.data.unitId != null
                         && resource.data.unitId == getUnitId());
 
@@ -67,19 +101,21 @@ service cloud.firestore {
     }
 
     // ── rollCalls ─────────────────────────────────────────────────────────────
+    // Editores de unidade lêem/escrevem apenas a própria unidade.
+    // Church staff, Pastor e Coords têm leitura ampla (relatórios).
     match /rollCalls/{rollCallId} {
-      allow read: if isAdmin() || isPastor() || isDirector()
-                  || (isSecretary()
+      allow read: if isAdmin() || isChurchStaff() || isPastor() || isCoord()
+                  || (isUnitEditor()
                       && resource.data.unitId != null
                       && resource.data.unitId == getUnitId());
 
-      allow create: if isAdmin() || isPastor() || isDirector()
-                    || (isSecretary()
+      allow create: if isAdmin()
+                    || (isUnitEditor()
                         && request.resource.data.unitId != null
                         && request.resource.data.unitId == getUnitId());
 
-      allow update: if isAdmin() || isPastor() || isDirector()
-                    || (isSecretary()
+      allow update: if isAdmin()
+                    || (isUnitEditor()
                         && resource.data.unitId != null
                         && resource.data.unitId == getUnitId());
 
@@ -100,19 +136,19 @@ service cloud.firestore {
 
     // ── goals ─────────────────────────────────────────────────────────────────
     // Documento ID: {quarterId}_{unitId}
-    // Secretário lê/escreve apenas a meta da própria unidade.
-    // Diretor, Pastor e Admin lêem/escrevem qualquer meta.
+    // Editores de unidade lêem/escrevem apenas a meta da própria unidade.
+    // Church staff, Pastor e Coords têm leitura ampla.
     match /goals/{goalId} {
-      allow read: if isAdmin() || isPastor() || isDirector()
-                  || (isSecretary() && resource.data.unitId == getUnitId());
+      allow read: if isAdmin() || isChurchStaff() || isPastor() || isCoord()
+                  || (isUnitEditor() && resource.data.unitId == getUnitId());
 
-      allow create: if isAdmin() || isPastor() || isDirector()
-                    || (isSecretary()
+      allow create: if isAdmin()
+                    || (isUnitEditor()
                         && request.resource.data.unitId != null
                         && request.resource.data.unitId == getUnitId());
 
-      allow update: if isAdmin() || isPastor() || isDirector()
-                    || (isSecretary() && resource.data.unitId == getUnitId());
+      allow update: if isAdmin()
+                    || (isUnitEditor() && resource.data.unitId == getUnitId());
 
       allow delete: if isAdmin();
     }
